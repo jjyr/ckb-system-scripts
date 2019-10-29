@@ -302,7 +302,7 @@ fn build_resolved_tx(data_loader: &DummyDataLoader, tx: &TransactionView) -> Res
     }
 }
 
-fn test_sighash_all_2_in_2_out_cycles() {
+fn prepare() -> (ResolvedTransaction, DummyDataLoader) {
 
     let mut data_loader = DummyDataLoader::new();
     let mut generator = Generator::non_crypto_safe_prng(42);
@@ -327,17 +327,21 @@ fn test_sighash_all_2_in_2_out_cycles() {
     let tx = sign_tx_by_input_group(tx, &privkey2, 1, 1);
 
     let resolved_tx = build_resolved_tx(&data_loader, &tx);
-    let verify_result =
-        TransactionScriptsVerifier::new(&resolved_tx, &data_loader).verify(MAX_CYCLES);
-    verify_result.expect("pass verification");
+    (resolved_tx, data_loader)
 }
 
 fn test_cycles(c: &mut Criterion) {
     const CONSUME_CYCLES: u64 = 3394652;
+    let (resolved_tx, data_loader) = prepare();
     let mut group = c.benchmark_group("consume cycles");
     group.throughput(Throughput::Bytes(CONSUME_CYCLES));
     group.bench_function("Consume cycles", |b| {
-        b.iter(||test_sighash_all_2_in_2_out_cycles())
+        b.iter(||{
+            let verify_result =
+                TransactionScriptsVerifier::new(&resolved_tx, &data_loader).verify(MAX_CYCLES);
+            verify_result.expect("pass verification");
+
+        })
     });
 }
 
