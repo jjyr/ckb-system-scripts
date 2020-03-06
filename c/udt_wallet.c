@@ -51,9 +51,11 @@ int pass_through() {
   ret = ckb_checked_load_cell_by_field(
       type_hash, &len, 0, 0, CKB_SOURCE_GROUP_INPUT, CKB_CELL_FIELD_TYPE_HASH);
 
-  if (ret != CKB_SUCCESS) {
+  if (ret != CKB_ITEM_MISSING && ret != CKB_SUCCESS) {
     return ERROR_SYSCALL;
   }
+
+  int is_ckb = ret == CKB_ITEM_MISSING;
   if (len > BLAKE2B_BLOCK_SIZE) {
     return ERROR_SCRIPT_TOO_LONG;
   }
@@ -82,17 +84,25 @@ int pass_through() {
     if (ret == CKB_INDEX_OUT_OF_BOUND) {
       break;
     }
-    if (ret != CKB_SUCCESS) {
+    if (ret != CKB_ITEM_MISSING && ret != CKB_SUCCESS) {
       return ret;
     }
     if (len != BLAKE2B_BLOCK_SIZE) {
       return ERROR_ENCODING;
     }
-    if ((memcmp(lock_hash_buf, lock_hash, BLAKE2B_BLOCK_SIZE) == 0) ||
-        (memcmp(type_hash_buf, type_hash, BLAKE2B_BLOCK_SIZE) == 0)) {
+    int lock_hash_is_same =
+        memcmp(lock_hash_buf, lock_hash, BLAKE2B_BLOCK_SIZE) == 0;
+    int type_hash_is_same;
+    if (is_ckb) {
+      type_hash_is_same = ret == CKB_ITEM_MISSING;
+    } else {
+      type_hash_is_same =
+          memcmp(type_hash_buf, type_hash, BLAKE2B_BLOCK_SIZE) == 0;
+    }
+    if (lock_hash_is_same && type_hash_is_same) {
       /* duplicates output wallet, return false */
       if (has_output_wallet) {
-        return 0;
+        return -1;
       }
       output_wallet_i = i;
       has_output_wallet = 1;
@@ -102,34 +112,21 @@ int pass_through() {
 
   /* can't pass through */
   if (!has_output_wallet) {
-    return 0;
+    return -1;
   }
 
   /* check wallet token type */
   unsigned char buf[SCRIPT_SIZE];
-  len = SCRIPT_SIZE;
-  ret = ckb_checked_load_cell_by_field(buf, &len, 0, 0, CKB_SOURCE_GROUP_INPUT,
-                                       CKB_CELL_FIELD_TYPE);
-  if (ret != CKB_SUCCESS) {
-    return ERROR_SYSCALL;
-  }
-  if (len > SCRIPT_SIZE) {
-    return ERROR_SCRIPT_TOO_LONG;
-  }
-  mol_seg_t script_seg;
-  script_seg.ptr = (uint8_t *)buf;
-  script_seg.size = len;
-  int is_ckb = MolReader_ScriptOpt_is_none(&script_seg);
 
   /* ckb wallet can't has data */
   if (is_ckb) {
     len = 1;
-    ckb_load_cell_data(buf, &len, 0, output_wallet_i, CKB_SOURCE_OUTPUT);
+    ret = ckb_load_cell_data(buf, &len, 0, output_wallet_i, CKB_SOURCE_OUTPUT);
     if (ret != CKB_SUCCESS) {
       return ERROR_SYSCALL;
     }
     if (len > 0) {
-      return 0;
+      return -1;
     }
   }
 
@@ -140,7 +137,7 @@ int pass_through() {
     len = CKB_LEN;
     ret = ckb_checked_load_cell_by_field((uint8_t *)&input, &len, 0, 0,
                                          CKB_SOURCE_GROUP_INPUT,
-                                         CKB_CELL_FIELD_OCCUPIED_CAPACITY);
+                                         CKB_CELL_FIELD_CAPACITY);
     if (ret != CKB_SUCCESS) {
       return ERROR_SYSCALL;
     }
@@ -150,14 +147,16 @@ int pass_through() {
     len = CKB_LEN;
     ret = ckb_checked_load_cell_by_field((uint8_t *)&output, &len, 0,
                                          output_wallet_i, CKB_SOURCE_OUTPUT,
-                                         CKB_CELL_FIELD_OCCUPIED_CAPACITY);
+                                         CKB_CELL_FIELD_CAPACITY);
     if (ret != CKB_SUCCESS) {
       return ERROR_SYSCALL;
     }
     if (len > CKB_LEN) {
       return ERROR_ENCODING;
     }
-    return output > input;
+    if (output > input) {
+      return 0;
+    }
   } else {
     uint128_t input = 0;
     uint128_t output = 0;
@@ -179,12 +178,16 @@ int pass_through() {
     if (len > CKB_LEN) {
       return ERROR_ENCODING;
     }
-    return output > input;
+    if (output > input) {
+      return 0;
+    }
   }
+
+  return -1;
 }
 
 int main() {
-  if (pass_through()) {
+  if (pass_through() == 0) {
     return 0;
   }
   return verify_secp256k1_blake160_sighash_all();

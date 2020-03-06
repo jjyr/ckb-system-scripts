@@ -56,4 +56,11 @@ int epoch_number_with_fraction_cmp(uint64_t a, uint64_t b) {
   }
 }
 
+void bytes_to_hex(char * buf, unsigned char * input, size_t len) {
+  size_t i;
+  for (i = 0; i < len; i++) {
+      sprintf(buf + i, "%02x", input[i]);
+  }
+  buf[i] = '\0';
+}
 #endif /* CKB_UTILS_H_ */

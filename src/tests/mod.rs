@@ -1,3 +1,4 @@
+mod udt_wallet;
 mod dao;
 mod secp256k1_blake160_multisig_all;
 mod secp256k1_blake160_sighash_all;
@@ -18,6 +19,8 @@ pub const MAX_CYCLES: u64 = std::u64::MAX;
 pub const SIGNATURE_SIZE: usize = 65;
 
 lazy_static! {
+    pub static ref UDT_WALLET_BIN: Bytes =
+        Bytes::from(&include_bytes!("../../specs/cells/udt_wallet")[..]);
     pub static ref SIGHASH_ALL_BIN: Bytes =
         Bytes::from(&include_bytes!("../../specs/cells/secp256k1_blake160_sighash_all")[..]);
     pub static ref SECP256K1_DATA_BIN: Bytes =

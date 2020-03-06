@@ -1,6 +1,6 @@
 use super::{
     blake160, sign_tx, sign_tx_by_input_group, DummyDataLoader, MAX_CYCLES, SECP256K1_DATA_BIN,
-    SIGHASH_ALL_BIN,
+    UDT_WALLET_BIN,
 };
 use ckb_crypto::secp::{Generator, Privkey};
 use ckb_error::assert_error_eq;
@@ -43,15 +43,15 @@ fn gen_tx_with_grouped_args<R: Rng>(
     // dep contract code
     let sighash_all_cell = CellOutput::new_builder()
         .capacity(
-            Capacity::bytes(SIGHASH_ALL_BIN.len())
+            Capacity::bytes(UDT_WALLET_BIN.len())
                 .expect("script capacity")
                 .pack(),
         )
         .build();
-    let sighash_all_cell_data_hash = CellOutput::calc_data_hash(&SIGHASH_ALL_BIN);
+    let sighash_all_cell_data_hash = CellOutput::calc_data_hash(&UDT_WALLET_BIN);
     dummy.cells.insert(
         sighash_all_out_point.clone(),
-        (sighash_all_cell, SIGHASH_ALL_BIN.clone()),
+        (sighash_all_cell, UDT_WALLET_BIN.clone()),
     );
     // setup secp256k1_data dep
     let secp256k1_data_out_point = {
@@ -395,7 +395,7 @@ fn test_super_long_witness() {
 
 #[test]
 fn test_sighash_all_2_in_2_out_cycles() {
-    const CONSUME_CYCLES: u64 = 3333657;
+    const CONSUME_CYCLES: u64 = 3320054;
 
     let mut data_loader = DummyDataLoader::new();
     let mut generator = Generator::non_crypto_safe_prng(42);
@@ -588,4 +588,37 @@ fn test_sighash_all_cover_extra_witnesses() {
         verify_result.unwrap_err(),
         ScriptError::ValidationFailure(ERROR_PUBKEY_BLAKE160_HASH),
     );
+}
+
+#[test]
+fn test_pass_through() {
+    let mut rng = thread_rng();
+    let mut data_loader = DummyDataLoader::new();
+    let privkey = Generator::random_privkey();
+    let pubkey = privkey.pubkey().expect("pubkey");
+    let pubkey_hash = blake160(&pubkey.serialize());
+
+    let script = {
+        let sighash_all_cell_data_hash = CellOutput::calc_data_hash(&UDT_WALLET_BIN);
+        Script::new_builder()
+            .args(pubkey_hash.pack())
+            .code_hash(sighash_all_cell_data_hash.clone())
+            .hash_type(ScriptHashType::Data.into())
+            .build()
+    };
+
+    let tx = gen_tx(&mut data_loader, pubkey_hash);
+    let output = tx.outputs().get(0).unwrap();
+    let tx = tx
+        .as_advanced_builder()
+        .set_witnesses(Vec::new())
+        .set_outputs(vec![output.as_builder().lock(script).capacity(44u64.pack()).build()])
+        .build();
+
+    let resolved_tx = build_resolved_tx(&data_loader, &tx);
+    let mut verifier = TransactionScriptsVerifier::new(&resolved_tx, &data_loader);
+    verifier.set_debug_printer(|_hash, msg| {println!("{}", msg);});
+    let verify_result =
+        verifier.verify(60000000);
+    verify_result.expect("pass");
 }
