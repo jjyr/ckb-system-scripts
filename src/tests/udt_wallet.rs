@@ -395,7 +395,7 @@ fn test_super_long_witness() {
 
 #[test]
 fn test_sighash_all_2_in_2_out_cycles() {
-    const CONSUME_CYCLES: u64 = 3320054;
+    const CONSUME_CYCLES: u64 = 3293945;
 
     let mut data_loader = DummyDataLoader::new();
     let mut generator = Generator::non_crypto_safe_prng(42);
@@ -592,7 +592,6 @@ fn test_sighash_all_cover_extra_witnesses() {
 
 #[test]
 fn test_pass_through() {
-    let mut rng = thread_rng();
     let mut data_loader = DummyDataLoader::new();
     let privkey = Generator::random_privkey();
     let pubkey = privkey.pubkey().expect("pubkey");
@@ -614,6 +613,7 @@ fn test_pass_through() {
         .set_witnesses(Vec::new())
         .set_outputs(vec![output.as_builder().lock(script).capacity(44u64.pack()).build()])
         .build();
+        dbg!(format!("{}", tx));
 
     let resolved_tx = build_resolved_tx(&data_loader, &tx);
     let mut verifier = TransactionScriptsVerifier::new(&resolved_tx, &data_loader);

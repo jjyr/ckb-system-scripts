@@ -136,6 +136,16 @@ int ckb_load_input_by_field(void* addr, uint64_t* len, size_t offset,
   return ret;
 }
 
+int ckb_checked_load_input_by_field(void* addr, uint64_t* len, size_t offset,
+                                   size_t index, size_t source, size_t field) {
+  uint64_t old_len = *len;
+  int ret = ckb_load_input_by_field(addr, len, offset, index, source, field);
+  if (ret == CKB_SUCCESS && (*len) > old_len) {
+    ret = CKB_LENGTH_NOT_ENOUGH;
+  }
+  return ret;
+}
+
 int ckb_load_cell_code(void* addr, size_t memory_size, size_t content_offset,
                        size_t content_size, size_t index, size_t source) {
   return syscall(SYS_ckb_load_cell_data_as_code, addr, memory_size,
