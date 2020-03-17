@@ -251,11 +251,12 @@ int check_payment_unlock(uint64_t min_ckb_amount, uint128_t min_udt_amount) {
       uint128_t min_output_udt_amount;
       int overflow;
       overflow = uint64_overflow_add(&min_output_ckb_amount, input_wallets[j].ckb_amount, min_ckb_amount);
-      if (overflow || ckb_amount < min_output_ckb_amount) {
-        return ERROR_OUTPUT_AMOUNT_NOT_ENOUGH;
-      }
+      int invalid_output_ckb = overflow || ckb_amount < min_output_ckb_amount;
       overflow = uint128_overflow_add(&min_output_udt_amount, input_wallets[j].udt_amount, min_udt_amount);
-      if (overflow || udt_amount < min_output_udt_amount) {
+      int invalid_output_udt = overflow || udt_amount < min_output_udt_amount;
+
+      /* fail the unlock if both conditions can't satisfied */
+      if(invalid_output_ckb && invalid_output_udt) {
         return ERROR_OUTPUT_AMOUNT_NOT_ENOUGH;
       }
 
