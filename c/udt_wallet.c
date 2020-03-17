@@ -27,14 +27,15 @@
 #define MAX_WITNESS_SIZE 32768
 #define MAX_TYPE_HASH 256
 #define MAX_POW_N 19
-#define MAX_UINT64 0xffffffffffffffff
+#define MAX_UINT64 0xffffffffffffffffUL
+#define MAX_UINT128 (((uint128_t)MAX_UINT64 << 64) + MAX_UINT64)
 
 #define ERROR_ARGUMENTS_LEN -1
 #define ERROR_ENCODING -2
 #define ERROR_SYSCALL -3
 #define ERROR_SCRIPT_TOO_LONG -21
 #define ERROR_OVERFLOWING -51
-#define ERROR_AMOUNT_NOT_ENOUGH -52
+#define ERROR_OUTPUT_AMOUNT_NOT_ENOUGH -52
 #define ERROR_TOO_MUCH_TYPE_HASH_INPUTS -53
 #define ERROR_PARING_INPUT_FAILED -54
 #define ERROR_PARING_OUTPUT_FAILED -55
@@ -67,6 +68,25 @@ int quick_pow10(int n, uint64_t * result)
     *result = pow10[n]; 
     return 0;
 }
+
+int uint64_overflow_add(uint64_t * result, uint64_t a, uint64_t b){
+  if (MAX_UINT64 - a < b) {
+    /* overflow */
+    return 1;
+  }
+  *result = a + b;
+  return 0;
+}
+
+int uint128_overflow_add(uint128_t * result, uint128_t a, uint128_t b){
+  if (MAX_UINT128 - a < b) {
+    /* overflow */
+    return 1;
+  }
+  *result = a + b;
+  return 0;
+}
+
 
 int check_payment_unlock(uint64_t min_ckb_amount, uint128_t min_udt_amount) {
   unsigned char lock_hash[BLAKE2B_BLOCK_SIZE];
@@ -227,11 +247,16 @@ int check_payment_unlock(uint64_t min_ckb_amount, uint128_t min_udt_amount) {
         continue;
       }
       /* compare amount */
-      if (ckb_amount < input_wallets[j].ckb_amount + min_ckb_amount) {
-        return ERROR_AMOUNT_NOT_ENOUGH;
+      uint64_t min_output_ckb_amount;
+      uint128_t min_output_udt_amount;
+      int overflow;
+      overflow = uint64_overflow_add(&min_output_ckb_amount, input_wallets[j].ckb_amount, min_ckb_amount);
+      if (overflow || ckb_amount < min_output_ckb_amount) {
+        return ERROR_OUTPUT_AMOUNT_NOT_ENOUGH;
       }
-      if (udt_amount < input_wallets[j].udt_amount + min_udt_amount) {
-        return ERROR_AMOUNT_NOT_ENOUGH;
+      overflow = uint128_overflow_add(&min_output_udt_amount, input_wallets[j].udt_amount, min_udt_amount);
+      if (overflow || udt_amount < min_output_udt_amount) {
+        return ERROR_OUTPUT_AMOUNT_NOT_ENOUGH;
       }
 
       /* increase counter */
