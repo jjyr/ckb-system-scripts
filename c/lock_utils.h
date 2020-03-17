@@ -23,35 +23,11 @@
  * Witness:
  * WitnessArgs with a signature in lock field used to present ownership.
  */
-int verify_secp256k1_blake160_sighash_all() {
+int verify_secp256k1_blake160_sighash_all(unsigned char pubkey_hash[BLAKE160_SIZE]) {
   int ret;
   uint64_t len = 0;
   unsigned char temp[TEMP_SIZE];
   unsigned char lock_bytes[SIGNATURE_SIZE];
-
-  /* Load args */
-  unsigned char script[SCRIPT_SIZE];
-  len = SCRIPT_SIZE;
-  ret = ckb_load_script(script, &len, 0);
-  if (ret != CKB_SUCCESS) {
-    return ERROR_SYSCALL;
-  }
-  if (len > SCRIPT_SIZE) {
-    return ERROR_SCRIPT_TOO_LONG;
-  }
-  mol_seg_t script_seg;
-  script_seg.ptr = (uint8_t *)script;
-  script_seg.size = len;
-
-  if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
-    return ERROR_ENCODING;
-  }
-
-  mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
-  mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
-  if (args_bytes_seg.size != BLAKE160_SIZE) {
-    return ERROR_ARGUMENTS_LEN;
-  }
 
   /* Load witness of first input */
   uint64_t witness_len = MAX_WITNESS_SIZE;
@@ -167,7 +143,7 @@ int verify_secp256k1_blake160_sighash_all() {
   blake2b_update(&blake2b_ctx, temp, pubkey_size);
   blake2b_final(&blake2b_ctx, temp, BLAKE2B_BLOCK_SIZE);
 
-  if (memcmp(args_bytes_seg.ptr, temp, BLAKE160_SIZE) != 0) {
+  if (memcmp(pubkey_hash, temp, BLAKE160_SIZE) != 0) {
     return ERROR_PUBKEY_BLAKE160_HASH;
   }
 

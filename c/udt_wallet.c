@@ -18,6 +18,7 @@
 #include "protocol.h"
 #include "secp256k1_helper.h"
 #include "lock_utils.h"
+#include "math.h"
 
 #define BLAKE2B_BLOCK_SIZE 32
 #define SCRIPT_SIZE 32768
@@ -25,6 +26,7 @@
 #define UDT_LEN 16
 #define MAX_WITNESS_SIZE 32768
 #define MAX_TYPE_HASH 256
+#define MAX_POW_N 10
 
 #define ERROR_ARGUMENTS_LEN -1
 #define ERROR_ENCODING -2
@@ -48,7 +50,21 @@ typedef struct {
   uint32_t output_cnt;
 } InputWallet;
 
-int check_payment_unlock() {
+int quick_pow10(int n)
+{
+    static int pow10[MAX_POW_N] = {
+        1, 10, 100, 1000, 10000, 
+        100000, 1000000, 10000000, 100000000, 1000000000
+    };
+
+    if(n >= MAX_POW_N) {
+      n = MAX_POW_N - 1;
+    }
+
+    return pow10[n]; 
+}
+
+int check_payment_unlock(uint64_t min_ckb_amount, uint128_t min_udt_amount) {
   unsigned char lock_hash[BLAKE2B_BLOCK_SIZE];
   InputWallet input_wallets[MAX_TYPE_HASH];
   uint64_t len = BLAKE2B_BLOCK_SIZE;
@@ -60,9 +76,6 @@ int check_payment_unlock() {
   if (len > BLAKE2B_BLOCK_SIZE) {
     return ERROR_SCRIPT_TOO_LONG;
   }
-
-  uint64_t min_ckb_amount = 0;
-  uint128_t min_udt_amount = 0;
 
   /* iterate inputs and find input wallet cell */
   int i = 0;
@@ -235,7 +248,7 @@ int check_payment_unlock() {
       return ERROR_DUPLICATED_INPUT_TYPE_HASH;
     }
 
-    i ++;
+    i++;
   }
 
   /* check inputs wallet, one input should pair with one output */
@@ -269,18 +282,68 @@ int has_signature(int *has_sig) {
   return CKB_SUCCESS;
 }
 
+int read_args(unsigned char *pubkey_hash, uint64_t *min_ckb_amount,
+              uint128_t *min_udt_amount) {
+  int ret;
+  uint64_t len = 0;
+
+  /* Load args */
+  unsigned char script[SCRIPT_SIZE];
+  len = SCRIPT_SIZE;
+  ret = ckb_load_script(script, &len, 0);
+  if (ret != CKB_SUCCESS) {
+    return ERROR_SYSCALL;
+  }
+  if (len > SCRIPT_SIZE) {
+    return ERROR_SCRIPT_TOO_LONG;
+  }
+  mol_seg_t script_seg;
+  script_seg.ptr = (uint8_t *)script;
+  script_seg.size = len;
+
+  if (MolReader_Script_verify(&script_seg, false) != MOL_OK) {
+    return ERROR_ENCODING;
+  }
+
+  mol_seg_t args_seg = MolReader_Script_get_args(&script_seg);
+  mol_seg_t args_bytes_seg = MolReader_Bytes_raw_bytes(&args_seg);
+  if (args_bytes_seg.size < BLAKE160_SIZE ||
+      args_bytes_seg.size > BLAKE160_SIZE + 2) {
+    return ERROR_ARGUMENTS_LEN;
+  }
+  memcpy(pubkey_hash, args_bytes_seg.ptr, BLAKE160_SIZE);
+  *min_ckb_amount = 0;
+  *min_udt_amount = 0;
+  if (args_bytes_seg.size > BLAKE160_SIZE) {
+    int x = args_bytes_seg.ptr[BLAKE160_SIZE];
+    *min_ckb_amount = (uint64_t)quick_pow10(x);
+  }
+  if (args_bytes_seg.size > BLAKE160_SIZE + 1) {
+    int x = args_bytes_seg.ptr[BLAKE160_SIZE + 1];
+    *min_udt_amount = (uint128_t)quick_pow10(x);
+  }
+  return CKB_SUCCESS;
+}
+
 int main() {
   int ret;
   int has_sig;
+  unsigned char pubkey_hash[BLAKE160_SIZE];
+  uint64_t min_ckb_amount;
+  uint128_t min_udt_amount;
+  ret = read_args(pubkey_hash, &min_ckb_amount, &min_udt_amount);
+  if (ret != CKB_SUCCESS) {
+    return ret;
+  }
   ret = has_signature(&has_sig);
   if (ret != CKB_SUCCESS) {
     return ret;
   }
   if (has_sig) {
     /* unlock via signature */
-    return verify_secp256k1_blake160_sighash_all();
+    return verify_secp256k1_blake160_sighash_all(pubkey_hash);
   } else {
     /* unlock via payment */
-    return check_payment_unlock();
+    return check_payment_unlock(min_ckb_amount, min_udt_amount);
   }
 }
