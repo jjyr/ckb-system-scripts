@@ -26,7 +26,8 @@
 #define UDT_LEN 16
 #define MAX_WITNESS_SIZE 32768
 #define MAX_TYPE_HASH 256
-#define MAX_POW_N 10
+#define MAX_POW_N 19
+#define MAX_UINT64 0xffffffffffffffff
 
 #define ERROR_ARGUMENTS_LEN -1
 #define ERROR_ENCODING -2
@@ -50,18 +51,21 @@ typedef struct {
   uint32_t output_cnt;
 } InputWallet;
 
-int quick_pow10(int n)
+int quick_pow10(int n, uint64_t * result)
 {
-    static int pow10[MAX_POW_N] = {
+    static uint64_t pow10[MAX_POW_N + 1] = {
         1, 10, 100, 1000, 10000, 
-        100000, 1000000, 10000000, 100000000, 1000000000
+        100000, 1000000, 10000000, 100000000, 1000000000,
+        10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000,
+        1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000, 10000000000000000000U,
     };
 
-    if(n >= MAX_POW_N) {
-      n = MAX_POW_N - 1;
+    if(n > MAX_POW_N) {
+      return 1;
     }
 
-    return pow10[n]; 
+    *result = pow10[n]; 
+    return 0;
 }
 
 int check_payment_unlock(uint64_t min_ckb_amount, uint128_t min_udt_amount) {
@@ -316,11 +320,20 @@ int read_args(unsigned char *pubkey_hash, uint64_t *min_ckb_amount,
   *min_udt_amount = 0;
   if (args_bytes_seg.size > BLAKE160_SIZE) {
     int x = args_bytes_seg.ptr[BLAKE160_SIZE];
-    *min_ckb_amount = (uint64_t)quick_pow10(x);
+    int is_overflow = quick_pow10(x, min_ckb_amount);
+    if (is_overflow) {
+      *min_ckb_amount = MAX_UINT64;
+    }
   }
   if (args_bytes_seg.size > BLAKE160_SIZE + 1) {
     int x = args_bytes_seg.ptr[BLAKE160_SIZE + 1];
-    *min_udt_amount = (uint128_t)quick_pow10(x);
+    uint64_t amount;
+    int is_overflow = quick_pow10(x, &amount);
+    if(is_overflow) {
+      *min_udt_amount = MAX_UINT64;
+    } else {
+      *min_udt_amount = amount;
+    }
   }
   return CKB_SUCCESS;
 }
