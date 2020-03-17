@@ -299,7 +299,13 @@ int has_signature(int *has_sig) {
   /* Load witness of first input */
   uint64_t witness_len = MAX_WITNESS_SIZE;
   ret = ckb_load_witness(temp, &witness_len, 0, 0, CKB_SOURCE_GROUP_INPUT);
-  if (ret != CKB_INDEX_OUT_OF_BOUND && ret != CKB_SUCCESS) {
+
+  if ((ret == CKB_INDEX_OUT_OF_BOUND) || (ret == CKB_SUCCESS && witness_len == 0)) {
+    *has_sig = 0;
+    return CKB_SUCCESS;
+  }
+
+  if (ret != CKB_SUCCESS) {
     return ERROR_SYSCALL;
   }
 
@@ -307,7 +313,14 @@ int has_signature(int *has_sig) {
     return ERROR_WITNESS_SIZE;
   }
 
-  *has_sig = ret == CKB_SUCCESS;
+  /* load signature */
+  mol_seg_t lock_bytes_seg;
+  ret = extract_witness_lock(temp, witness_len, &lock_bytes_seg);
+  if (ret != 0) {
+    return ERROR_ENCODING;
+  }
+
+  *has_sig = lock_bytes_seg.size > 0;
   return CKB_SUCCESS;
 }
 
